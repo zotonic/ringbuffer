@@ -5,7 +5,7 @@ RingBuffer
 
 A ring buffer implementation using Erlang and ets tables.
 
-Writing and reading from the ring buffer is without locking and
+Writing and reading from the ring buffer is lock-free and
 does not use message passing.
 
 The size of the ring is set upon creation. If the ring is full
@@ -15,8 +15,25 @@ returned.
 
 The ring's ets table is owned by a process managed by the ringbuffer_sup.
 
-Usage
------
+## Installation
+
+RingBuffer is at Hex, in your `rebar.config` file use:
+
+```erlang
+{deps, [
+    ringbuffer
+]}.
+```
+
+You can also use the direct Git url and use the development version:
+
+```erlang
+{deps, [
+    {ringbuffer, {git, "https://github.com/zotonic/ringbuffer.git", {branch, "main"}}}
+]}.
+```
+
+## Usage
 
 First create a ringbuffer. The buffer is named with an atom
 and needs a size of the maximum amount of items to buffer.
@@ -52,3 +69,24 @@ If the buffer is empty then an error is returned:
 ```erlang
     {error, empty} = ringbuffer:read(name).
 ```
+
+## Test
+
+Run the tests:
+
+```
+make test
+```
+
+All tests should pass.
+
+For additional checks, also run:
+
+```
+make xref
+make dialyzer
+```
+
+## License
+
+Ringbuffer is licensed under the Apache 2.0 license.
