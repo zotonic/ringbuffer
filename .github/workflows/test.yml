@@ -34,3 +34,5 @@ jobs:
         run: make xref
       - name: Dialyzer
         run: make dialyzer
+      - name: Docs
+        run: make edoc
