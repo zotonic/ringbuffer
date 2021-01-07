@@ -1,3 +1,5 @@
+[![Test](https://github.com/zotonic/ringbuffer/workflows/Test/badge.svg)](https://github.com/zotonic/ringbuffer/actions?query=workflow%3ATest)
+
 RingBuffer
 ==========
 
