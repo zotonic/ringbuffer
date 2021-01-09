@@ -26,6 +26,7 @@ all_test_() ->
      [ fun test_simple/0
      , fun test_full/0
      , fun test_race/0
+     , fun test_busy/0
      ]}.
 
 setup() ->
@@ -59,33 +60,108 @@ test_full() ->
 test_race() ->
     {ok, _} = ringbuffer:new(race, 10000),
     Self = self(),
-    erlang:spawn_link(fun() -> writer(a, 1000, Self) end),
-    erlang:spawn_link(fun() -> writer(b, 1000, Self) end),
-    erlang:spawn_link(fun() -> writer(c, 1000, Self) end),
-    A1 = collect_all([]),
+    erlang:spawn_link(fun() -> writer(race, a, 1000, Self) end),
+    erlang:spawn_link(fun() -> writer(race, b, 1000, Self) end),
+    erlang:spawn_link(fun() -> writer(race, c, 1000, Self) end),
+    A1 = collect_all(race, []),
     timer:sleep(1),
-    A2 = collect_all(A1),
+    A2 = collect_all(race, A1),
     timer:sleep(1),
-    A3 = collect_all(A2),
+    A3 = collect_all(race, A2),
     timer:sleep(1),
-    A4 = collect_all(A3),
+    A4 = collect_all(race, A3),
     receive a -> ok end,
     receive b -> ok end,
     receive c -> ok end,
-    Acc = collect_all(A4),
+    Acc = collect_all(race, A4),
     3000 = length(Acc),
     ok = ringbuffer:delete(race),
     ok.
 
-collect_all(Acc) ->
-    case ringbuffer:read(race) of
-        {error, empty} -> Acc;
-        {ok, {0, K}} -> collect_all([ K | Acc ])
+
+test_busy() ->
+    {ok, _} = ringbuffer:new(busy, 100),
+    NMsgs = 10000,
+    NReader = 10,
+    NWriter = 100,
+    Self = self(),
+    Ws = lists:map(
+        fun(N) ->
+            erlang:spawn_link(
+                fun() ->
+                    timer:sleep(10),
+                    writer(busy, N, NMsgs, Self)
+                end)
+        end,
+        lists:seq(1,NWriter)),
+    Rs = lists:map(
+        fun(_N) ->
+            erlang:spawn_link(fun() -> reader(busy, 0, []) end)
+        end,
+        lists:seq(1,NReader)),
+    % Wait for all writers to finish
+    wait_processes(Ws),
+    % Wait a bit for readers to catch up.
+    timer:sleep(100),
+    % Collect all readers in Rs
+    lists:map(
+        fun(Pid) ->
+            Pid ! {stop, Self}
+        end,
+        Rs),
+    % Receive length(Rs) messages back
+    Accs = lists:map(
+        fun(Pid) ->
+            receive
+                {SAcc, Acc, Pid} -> {SAcc, Acc}
+            end
+        end,
+        Rs),
+    {Skips, Data} = lists:unzip(Accs),
+    TotalSkips = lists:sum(Skips),
+    Data1 = lists:flatten(Data),
+    % - SAcc + length(Acc) + length(SRest) should be NWriter * NMsgs.
+    Received = TotalSkips + length(Data1),
+    Sent = NWriter * NMsgs,
+    Sent = Received,
+    % - Data1 should only contain unique elements
+    ok.
+
+wait_processes([]) ->
+    ok;
+wait_processes([ Pid | Ps ]) ->
+    case erlang:is_process_alive(Pid) of
+        true ->
+            timer:sleep(1),
+            wait_processes([ Pid | Ps ]);
+        false ->
+            wait_processes(Ps)
     end.
 
-writer(K, 0, Self) ->
+collect_all(Buffer, Acc) ->
+    case ringbuffer:read(Buffer) of
+        {error, empty} -> Acc;
+        {error, no_value} -> collect_all(Buffer, Acc);
+        {ok, {0, K}} -> collect_all(Buffer, [ K | Acc ])
+    end.
+
+writer(_Buffer, K, 0, Self) ->
     Self ! K,
     ok;
-writer(K, N, Self) ->
-    ringbuffer:write(race, {K, N}),
-    writer(K, N-1, Self).
+writer(Buffer, K, N, Self) ->
+    ringbuffer:write(Buffer, {K, N}),
+    writer(Buffer, K, N-1, Self).
+
+
+% very busy reader
+reader(Buffer, SAcc, Acc) ->
+    case ringbuffer:read(Buffer) of
+        {error, empty} ->
+            receive
+                {stop, Pid} -> Pid ! {SAcc, Acc, self()}
+            after 0 ->
+                reader(Buffer, SAcc, Acc)
+            end;
+        {ok, {Skipped, K}} ->
+            reader(Buffer, SAcc + Skipped, [ K | Acc ])
+    end.

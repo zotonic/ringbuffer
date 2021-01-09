@@ -2,7 +2,7 @@
 %% @copyright 2021 Marc Worrell
 %% @doc Process to own the created ets table for the ring buffer.
 
-%% Copyright 2021 Arjan Scherpenisse
+%% Copyright 2021 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -39,16 +39,14 @@
 
 
 -record(entry, {
-        index :: non_neg_integer(),
-        w :: non_neg_integer(),
+        w :: integer(),
         payload :: term()
     }).
 
--define(PID_INDEX,    0).
--define(SIZE_INDEX,   1).
--define(WRITER_INDEX, 2).
--define(READER_INDEX, 3).
--define(INDEX_OFFSET, 4).
+-define(PID_INDEX,    -1).
+-define(SIZE_INDEX,   -2).
+-define(WRITER_INDEX, -3).
+-define(READER_INDEX, -4).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -70,9 +68,12 @@ process_pid(Name) ->
 -spec write( Name :: atom(), Payload :: term() ) -> ok.
 write(Name, Payload) ->
     [ #entry{ payload = Size } ] = ets:lookup(Name, ?SIZE_INDEX),
-    Writer = ets:update_counter(Name, ?WRITER_INDEX, {#entry.w, 1}),
-    Index = (Writer rem Size) + ?INDEX_OFFSET,
-    ets:insert(Name, #entry{ index = Index, w = Writer, payload = Payload }),
+    NextW = ets:update_counter(Name, ?WRITER_INDEX, {#entry.payload, 1}),
+    ets:insert(Name, #entry{ w = NextW, payload = Payload }),
+    case NextW > Size of
+        true -> ets:delete(Name, NextW - Size);
+        false -> ok
+    end,
     ok.
 
 %% @doc Read a payload from the buffer. Skip entries that are overwritten
@@ -81,25 +82,77 @@ write(Name, Payload) ->
 read(Name) ->
     read(Name, 0).
 
+%% @doc There are a coupe of race conditions we need to take care of:
+%%
+%% 1. Writer incremented -> Reader tries entry --> Writer writes entry
+%% In this case the w-value read by the reader is Size smaller than that
+%% of the writer. In this case we wait till the writer finishes writing.
+%%
+%% 2. Two or more readers arrive at the same time, incrementing the reader value.
+%% One of the readers will have the correct value and can fetch the next entry.
+%% In this case the reader can move past the writer if there are not enough
+%% entries in the buffer for all readers.
+%%
+%% As the case where multiple readers are racing past the writer can not be solved
+%% without synchronization, we let the ringbuffer process handle the reader increment.
+%%
 read(Name, Skipped) ->
     [ #entry{ payload = Size } ] = ets:lookup(Name, ?SIZE_INDEX),
-    [ #entry{ w = Writer } ] = ets:lookup(Name, ?WRITER_INDEX),
-    [ #entry{ w = Reader } ] = ets:lookup(Name, ?READER_INDEX),
+    [ #entry{ payload = Writer } ] = ets:lookup(Name, ?WRITER_INDEX),
+    [ #entry{ payload = Reader } ] = ets:lookup(Name, ?READER_INDEX),
     case Reader of
         Writer ->
-            % Writer is at reader, buffer is empty.
+            % Reader is at the writer, buffer is empty.
             {error, empty};
         _ ->
-            % Writer is passed the reader, fetch next position to read
-            NextReader = ets:update_counter(Name, ?READER_INDEX, {#entry.w, 1}),
-            Index = (NextReader rem Size) + ?INDEX_OFFSET,
-            [ #entry{ w = W, payload = P } ] = ets:lookup(Name, Index),
-            case W of
-                NextReader ->
-                    {ok, {Skipped, P}};
-                _ ->
-                    % Writer is passed our reader, skip the reader forward.
-                    read(Name, Skipped + 1)
+            [ #entry{ payload = Pid } ] = ets:lookup(Name, ?PID_INDEX),
+            case gen_server:call(Pid, advance_reader) of
+                {ok, {IncSkipped, R}} ->
+                    case ets:lookup(Name, R) of
+                        [ #entry{ w = R, payload = P} ] ->
+                            % All ok - this is the value we expected
+                            ets:delete(Name, R),
+                            {ok, {Skipped + IncSkipped, P}};
+                        [] ->
+                            % No entry, possible reasons:
+                            % 1. race condition: writer didn't write yet
+                            % 2. entry too old, skip and try next
+                            % 3. writer crashed between counter update and write
+                            % 4. writer was so fast that it deleted the too old entry
+                            [ #entry{ payload = W1 } ] = ets:lookup(Name, ?WRITER_INDEX),
+                            if
+                                R =< (W1 - Size) ->
+                                    % option 2: Reader fell behind, writer deleted the entry
+                                    read(Name, Skipped+IncSkipped+1);
+                                true ->
+                                    % option 1: reader tried to read an entry that was not written yet.
+                                    % or option 3, which we discover by waiting for a set period
+                                    read_wait(Name, Size, Skipped+IncSkipped, R, 100)
+                            end
+                    end;
+                {error, empty} ->
+                    {error, empty}
+            end
+    end.
+
+read_wait(Name, _Size, Skipped, _R, 0) ->
+    % Give up - try next entry
+    read(Name, Skipped+1);
+read_wait(Name, Size, Skipped, R, Try) ->
+    case ets:lookup(Name, R) of
+        [ #entry{ w = R, payload = P} ] ->
+            % All ok - this is the value we expected
+            ets:delete(Name, R),
+            {ok, {Skipped, P}};
+        [] ->
+            [ #entry{ w = W } ] = ets:lookup(Name, ?WRITER_INDEX),
+            if
+                R =< (W - Size) ->
+                    % Fell behind while waiting for the value, assume it is gone.
+                    read(Name, Skipped+1);
+                true ->
+                    timer:sleep(1),
+                    read_wait(Name, Size, Skipped, R, Try-1)
             end
     end.
 
@@ -112,46 +165,47 @@ init([Name, Size]) ->
         set,
         named_table,
         public,
-        {keypos, #entry.index},
+        {keypos, #entry.w},
         {write_concurrency, true}
     ],
     Name = ets:new(Name, Options),
-    ets:insert(Name, #entry{ index = ?PID_INDEX,    w = 0, payload = self() }),
-    ets:insert(Name, #entry{ index = ?SIZE_INDEX,   w = 0, payload = Size }),
-    ets:insert(Name, #entry{ index = ?WRITER_INDEX, w = 0, payload = 1 }),
-    ets:insert(Name, #entry{ index = ?READER_INDEX, w = 0, payload = 1 }),
-    initialize(Name, Size),
-    {ok, Name}.
+    ets:insert(Name, #entry{ w = ?PID_INDEX,    payload = self() }),
+    ets:insert(Name, #entry{ w = ?SIZE_INDEX,   payload = Size }),
+    ets:insert(Name, #entry{ w = ?WRITER_INDEX, payload = 1 }),
+    ets:insert(Name, #entry{ w = ?READER_INDEX, payload = 1 }),
+    {ok, {Name, Size}}.
 
-handle_call(_Call, _From, Name) ->
-    {reply, ok, Name}.
+handle_call(advance_reader, _From, {Name, Size} = State) ->
+    [ #entry{ payload = Writer } ] = ets:lookup(Name, ?WRITER_INDEX),
+    [ #entry{ payload = Reader } ] = ets:lookup(Name, ?READER_INDEX),
+    Reply = if
+        Writer > (Reader + Size) ->
+            Skip = (Writer - Size) - Reader,
+            NextR = ets:update_counter(Name, ?READER_INDEX, {#entry.payload, Skip + 1}),
+            {ok, {Skip, NextR}};
+        Writer > Reader ->
+            NextR = ets:update_counter(Name, ?READER_INDEX, {#entry.payload, 1}),
+            {ok, {0, NextR}};
+        true ->
+            {error, empty}
+    end,
+    {reply, Reply, State}.
 
-handle_cast(_Msg, Name) ->
-    {noreply, Name}.
+handle_cast(_Msg, State) ->
+    {noreply, State}.
 
-handle_info(timeout, Name) ->
-    {noreply, Name};
+handle_info(timeout, State) ->
+    {noreply, State};
 
-handle_info(_Info, Name) ->
-    {noreply, Name}.
+handle_info(_Info, State) ->
+    {noreply, State}.
 
-terminate(_Reason, _Name) ->
+terminate(_Reason, _State) ->
     ok.
 
-code_change(_OldVsn, Name, _Extra) ->
-    {ok, Name}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
-%% @doc Initialize all slots in the ring buffer.
-initialize(_Name, 0) ->
-    ok;
-initialize(Name, N) ->
-    R = #entry{
-        index = N - 1 + ?INDEX_OFFSET,
-        w = 0,
-        payload = undefined
-    },
-    ets:insert(Name, R).
