@@ -1,6 +1,6 @@
 {application, ringbuffer,
  [
-  {description, "RingBuffer - ring buffer using ets"},
+  {description, "RingBuffer - size limited queue, like a ring of cyclic buffer. With non blocking and non locking writers."},
   {vsn, "git"},
   {registered, []},
   {applications, [
