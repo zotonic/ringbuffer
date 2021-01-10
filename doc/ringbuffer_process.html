@@ -25,7 +25,7 @@
 <tr><td valign="top"><a href="#init-1">init/1</a></td><td></td></tr>
 <tr><td valign="top"><a href="#process_pid-1">process_pid/1</a></td><td>Find the process pid for the process owning the ets table.</td></tr>
 <tr><td valign="top"><a href="#read-1">read/1</a></td><td>Read a payload from the buffer.</td></tr>
-<tr><td valign="top"><a href="#start_link-2">start_link/2</a></td><td></td></tr>
+<tr><td valign="top"><a href="#start_link-2">start_link/2</a></td><td>Create a new process managing a ringbuffer.</td></tr>
 <tr><td valign="top"><a href="#terminate-2">terminate/2</a></td><td></td></tr>
 <tr><td valign="top"><a href="#write-2">write/2</a></td><td>Write a payload the buffer.</td></tr>
 </table>
@@ -34,25 +34,25 @@
 
 <h3 class="function"><a name="code_change-3">code_change/3</a></h3>
 <div class="spec">
-<p><tt>code_change(OldVsn, Name, Extra) -&gt; any()</tt></p>
+<p><tt>code_change(OldVsn, State, Extra) -&gt; any()</tt></p>
 <p> </p>
 </div>
 
 <h3 class="function"><a name="handle_call-3">handle_call/3</a></h3>
 <div class="spec">
-<p><tt>handle_call(Call, From, Name) -&gt; any()</tt></p>
+<p><tt>handle_call(X1, From, State) -&gt; any()</tt></p>
 <p> </p>
 </div>
 
 <h3 class="function"><a name="handle_cast-2">handle_cast/2</a></h3>
 <div class="spec">
-<p><tt>handle_cast(Msg, Name) -&gt; any()</tt></p>
+<p><tt>handle_cast(Msg, State) -&gt; any()</tt></p>
 <p> </p>
 </div>
 
 <h3 class="function"><a name="handle_info-2">handle_info/2</a></h3>
 <div class="spec">
-<p><tt>handle_info(Info, Name) -&gt; any()</tt></p>
+<p><tt>handle_info(Info, State) -&gt; any()</tt></p>
 <p> </p>
 </div>
 
@@ -64,26 +64,42 @@
 
 <h3 class="function"><a name="process_pid-1">process_pid/1</a></h3>
 <div class="spec">
-<p><tt>process_pid(Name::atom()) -&gt; {ok, pid()}</tt><br></p>
+<p><tt>process_pid(Name::atom()) -&gt; {ok, pid()} | {error, badarg}</tt><br></p>
 <p> </p>
-</div><p>Find the process pid for the process owning the ets table.</p>
+</div><p>Find the process pid for the process owning the ets table. If the buffer
+  does not exist then an error is returned.</p>
 
 <h3 class="function"><a name="read-1">read/1</a></h3>
 <div class="spec">
 <p><tt>read(Name::atom()) -&gt; {ok, {Skipped::pos_integer(), Payload::term()}} | {error, empty}</tt><br></p>
 <p> </p>
-</div><p>Read a payload from the buffer. Skip entries that are overwritten
-  by the writer.</p>
+</div><p><p>Read a payload from the buffer. Skip entries that are deleted  
+by the writers.</p>
+ 
+  <p>There are a coupe of race conditions we need to take care of:</p>
+ 
+  <p>1. Writer incremented -&gt; Reader tries entry --&gt; Writer writes entry  
+In this case the w-value read by the reader is Size smaller than that  
+of the writer. In this case we wait till the writer finishes writing.</p>
+ 
+  <p>2. Two or more readers arrive at the same time, incrementing the reader value.  
+One of the readers will have the correct value and can fetch the next entry.  
+In this case the reader can move past the writer if there are not enough  
+entries in the buffer for all readers.</p>
+ 
+  For the case where multiple readers are racing past the writer can not be solved
+  without synchronization, we let the ringbuffer process handle the reader increment.
+ </p>
 
 <h3 class="function"><a name="start_link-2">start_link/2</a></h3>
 <div class="spec">
-<p><tt>start_link(Name, Size) -&gt; any()</tt></p>
+<p><tt>start_link(Name::atom(), Size::pos_integer()) -&gt; {ok, pid()} | {error, term()}</tt><br></p>
 <p> </p>
-</div>
+</div><p>Create a new process managing a ringbuffer.</p>
 
 <h3 class="function"><a name="terminate-2">terminate/2</a></h3>
 <div class="spec">
-<p><tt>terminate(Reason, Name) -&gt; any()</tt></p>
+<p><tt>terminate(Reason, State) -&gt; any()</tt></p>
 <p> </p>
 </div>
 
@@ -92,7 +108,7 @@
 <p><tt>write(Name::atom(), Payload::term()) -&gt; ok</tt><br></p>
 <p> </p>
 </div><p>Write a payload the buffer. If the readers can't keep up then
-  older entries are overwritten.</p>
+  older entries are deleted.</p>
 <hr>
 
 <div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>

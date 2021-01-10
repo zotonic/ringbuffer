@@ -27,8 +27,10 @@
 %% Application callbacks
 %% ===================================================================
 
+%% @doc Application callback, start the ringbuffer supervisor.
 start(_StartType, _StartArgs) ->
     ringbuffer_sup:start_link().
 
+%% @doc Application callback, called when stopping the application.
 stop(_State) ->
     ok.

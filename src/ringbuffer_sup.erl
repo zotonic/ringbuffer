@@ -1,6 +1,6 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2021 Marc Worrell
-%% @doc Supervisor for the created ring buffers.
+%% @doc Supervisor for the ring buffers processes.
 
 %% Copyright 2021 Marc Worrell
 %%
@@ -32,16 +32,17 @@
 %% API functions
 %% ===================================================================
 
-%% @doc Start the supervisor for the ring buffer processes.
+%% @doc Start the simple_one_for_one supervisor for the ring buffer processes.
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 %% @doc Start a ringbuffer.
--spec start_child( Name :: atom(), Size :: non_neg_integer() ) -> {ok, pid()}.
+-spec start_child( Name :: atom(), Size :: pos_integer() ) -> {ok, pid()} | {error, term()}.
 start_child(Name, Size) ->
     supervisor:start_child(?MODULE, [Name, Size]).
 
-%% @doc Stop a ringbuffer.
+%% @doc Stop a ringbuffer. The managing process is removed from the supervisor and the
+%% ets table is released.
 -spec stop_child( Name :: atom() ) -> ok | {error, not_found}.
 stop_child(Name) ->
     case find_child(Name) of
@@ -60,6 +61,7 @@ find_child(Name) ->
 %% Supervisor callbacks
 %% ===================================================================
 
+%% @doc Supervisor callback, initialize the children.
 init([]) ->
     SupFlags = #{
         strategy => simple_one_for_one,

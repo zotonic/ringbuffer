@@ -10,12 +10,37 @@
 <hr>
 
 <h1>Module ringbuffer</h1>
-<ul class="index"><li><a href="#description">Description</a></li><li><a href="#types">Data Types</a></li><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>RingBuffer main API.
+<ul class="index"><li><a href="#description">Description</a></li><li><a href="#types">Data Types</a></li><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>Ringbuffer implements a length limited queue.
 <p>Copyright © 2021 Marc Worrell</p>
 
 <p><b>Authors:</b> Marc Worrell (<a href="mailto:marc@worrell.nl"><tt>marc@worrell.nl</tt></a>).</p>
 
-<h2><a name="description">Description</a></h2>RingBuffer main API
+<h2><a name="description">Description</a></h2><p>Ringbuffer implements a length limited queue. In systems this is  
+often implemented as a ring, or cylic, buffer. Where the writer can  
+push the reader ahead if the buffer is full.</p>
+ 
+  <p>This kind of buffers is very useful in situations where you can have  
+big surges of writers, with a limited amount of readers. And where it  
+is ok to silently drop entries from the queue.</p>
+ 
+  <p>An example is a logging system for a http server, which can handle large  
+bursts of requests. The logger is often limited in its throughput, and it  
+is perfectly ok to drop log entries if that means that the server can  
+handle the peak load.</p>
+ 
+  <p>This ringbuffer is technically not a ring. It is a size limited buffer,  
+implemented in ets. Its main characteristics are:</p>
+ 
+  <ul>
+  <li>Size limited, define the maximum number of entries upon queue creation;</li>
+  <li>As many queues as needed;</li>
+  <li>Optimized for writes: non locking and non blocking queue writes;</li>
+  <li>Readers are synchronized to prevent race conditions;</li>
+  <li>Readers return the number of entries that were lost due to too.</li>
+  fast writers.
+  </ul>
+ 
+ 
 <h2><a name="types">Data Types</a></h2>
 
 <h3 class="typedecl"><a name="type-ringbuffer">ringbuffer()</a></h3>
@@ -24,7 +49,7 @@
 
 <h2><a name="index">Function Index</a></h2>
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#delete-1">delete/1</a></td><td>Delete a named ringbuffer, all queued data is destroyed.</td></tr>
-<tr><td valign="top"><a href="#new-2">new/2</a></td><td>Create a new named buffer.</td></tr>
+<tr><td valign="top"><a href="#new-2">new/2</a></td><td>Create a new named buffer of Size entries.</td></tr>
 <tr><td valign="top"><a href="#read-1">read/1</a></td><td>Read the next entry from the named ringbuffer.</td></tr>
 <tr><td valign="top"><a href="#start-0">start/0</a></td><td></td></tr>
 <tr><td valign="top"><a href="#write-2">write/2</a></td><td>Add an entry to the named ringbuffer.</td></tr>
@@ -36,19 +61,25 @@
 <div class="spec">
 <p><tt>delete(Name::atom()) -&gt; ok | {error, not_found}</tt><br></p>
 <p> </p>
-</div><p>Delete a named ringbuffer, all queued data is destroyed.</p>
+</div><p>Delete a named ringbuffer, all queued data is destroyed. The ets table and the
+  synchronizing process are deleted.</p>
 
 <h3 class="function"><a name="new-2">new/2</a></h3>
 <div class="spec">
-<p><tt>new(Name::atom(), Size::non_neg_integer()) -&gt; {ok, pid()} | {error, term()}</tt><br></p>
+<p><tt>new(Name::atom(), Size::pos_integer()) -&gt; {ok, pid()} | {error, term()}</tt><br></p>
 <p> </p>
-</div><p>Create a new named buffer. The name must be unique for all ets tables.</p>
+</div><p>Create a new named buffer of Size entries. The name must be unique for all ets tables.
+  The name must be an atom, and is used for the name of the ets table. A process owning the
+  ets table and synchronizing the readers is added to <tt>ringbuffer_sup</tt>.</p>
 
 <h3 class="function"><a name="read-1">read/1</a></h3>
 <div class="spec">
 <p><tt>read(Name::atom()) -&gt; {ok, {non_neg_integer(), term()}} | {error, empty}</tt><br></p>
 <p> </p>
-</div><p>Read the next entry from the named ringbuffer.</p>
+</div><p>Read the next entry from the named ringbuffer. Return the number of skipped entries and
+  the payload of the entry read. An entry is skipped if the readers are falling behind the
+  writers by more that the size of the buffer. <tt>{error, empty}</tt> is returned if the
+  buffer is empty.</p>
 
 <h3 class="function"><a name="start-0">start/0</a></h3>
 <div class="spec">

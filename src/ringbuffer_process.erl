@@ -52,19 +52,26 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 
+%% @doc Create a new process managing a ringbuffer.
+-spec start_link( atom(), pos_integer() ) -> {ok, pid()} | {error, term()}.
 start_link(Name, Size) ->
     gen_server:start_link(?MODULE, [Name, Size], []).
 
 
-%% @doc Find the process pid for the process owning the ets table.
--spec process_pid( Name :: atom() ) -> {ok, pid()}.
+%% @doc Find the process pid for the process owning the ets table. If the buffer
+%% does not exist then an error is returned.
+-spec process_pid( Name :: atom() ) -> {ok, pid()} | {error, badarg}.
 process_pid(Name) ->
-    [ #entry{ payload = Pid } ] = ets:lookup(Name, ?PID_INDEX),
-    {ok, Pid}.
-
+    try
+        [ #entry{ payload = Pid } ] = ets:lookup(Name, ?PID_INDEX),
+        {ok, Pid}
+    catch
+        error:badarg ->
+            {error, badarg}
+    end.
 
 %% @doc Write a payload the buffer. If the readers can't keep up then
-%% older entries are overwritten.
+%% older entries are deleted.
 -spec write( Name :: atom(), Payload :: term() ) -> ok.
 write(Name, Payload) ->
     [ #entry{ payload = Size } ] = ets:lookup(Name, ?SIZE_INDEX),
@@ -76,13 +83,10 @@ write(Name, Payload) ->
     end,
     ok.
 
-%% @doc Read a payload from the buffer. Skip entries that are overwritten
-%% by the writer.
--spec read( Name :: atom() ) -> {ok, {Skipped :: pos_integer(), Payload :: term() }} | {error, empty}.
-read(Name) ->
-    read(Name, 0).
-
-%% @doc There are a coupe of race conditions we need to take care of:
+%% @doc Read a payload from the buffer. Skip entries that are deleted
+%% by the writers.
+%%
+%% There are a coupe of race conditions we need to take care of:
 %%
 %% 1. Writer incremented -> Reader tries entry --> Writer writes entry
 %% In this case the w-value read by the reader is Size smaller than that
@@ -93,9 +97,13 @@ read(Name) ->
 %% In this case the reader can move past the writer if there are not enough
 %% entries in the buffer for all readers.
 %%
-%% As the case where multiple readers are racing past the writer can not be solved
+%% For the case where multiple readers are racing past the writer can not be solved
 %% without synchronization, we let the ringbuffer process handle the reader increment.
 %%
+-spec read( Name :: atom() ) -> {ok, {Skipped :: pos_integer(), Payload :: term() }} | {error, empty}.
+read(Name) ->
+    read(Name, 0).
+
 read(Name, Skipped) ->
     [ #entry{ payload = Size } ] = ets:lookup(Name, ?SIZE_INDEX),
     [ #entry{ payload = Writer } ] = ets:lookup(Name, ?WRITER_INDEX),
