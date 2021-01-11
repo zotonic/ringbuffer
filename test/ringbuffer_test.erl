@@ -125,6 +125,8 @@ test_busy() ->
     Sent = NWriter * NMsgs,
     Sent = Received,
     % - Data1 should only contain unique elements
+    Sorted = lists:sort(Data1),
+    Sorted = lists:usort(Data1),
     ok.
 
 wait_processes([]) ->
