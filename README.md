@@ -1,4 +1,5 @@
 [![Test](https://github.com/zotonic/ringbuffer/workflows/Test/badge.svg)](https://github.com/zotonic/ringbuffer/actions?query=workflow%3ATest)
+[![Hex version](https://img.shields.io/hexpm/v/ringbuffer.svg "Hex version")](https://hex.pm/packages/ringbuffer)
 
 Ringbuffer
 ==========
