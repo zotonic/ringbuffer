@@ -1,6 +1,6 @@
 [![Test](https://github.com/zotonic/ringbuffer/workflows/Test/badge.svg)](https://github.com/zotonic/ringbuffer/actions?query=workflow%3ATest)
 
-RingBuffer
+Ringbuffer
 ==========
 
 A ring buffer implementation using Erlang and ets tables.
@@ -23,14 +23,14 @@ bursts of requests. The logger is often limited in its throughput, and it
 is perfectly ok to drop log entries if that means that the server can
 handle the peak load.
 
-This ringbuffer is technically not a ring. It is a size limited buffer,
+This ring buffer is technically not a ring. It is a size limited buffer,
 implemented in ets. Its main characteristics are:
 
  * Optimized for writes: non locking and non blocking queue writes;
  * Size limited, define the maximum number of entries upon queue creation;
  * Readers are synchronized to prevent race conditions;
- * Readers return the number of entries that were lost due to too fast writers.
- * As many queues as needed;
+ * Readers return the number of entries that were lost due to too fast writers;
+ * As many queues as needed.
 
 The size of the ring is set upon creation. If the ring is full
 then older entries are overwritten. Overwritten entries are skipped

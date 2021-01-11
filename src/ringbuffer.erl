@@ -14,7 +14,7 @@
 %% is perfectly ok to drop log entries if that means that the server can
 %% handle the peak load.
 %%
-%% This ringbuffer is technically not a ring. It is a size limited buffer,
+%% This ring buffer is technically not a ring. It is a size limited buffer,
 %% implemented in ets. Its main characteristics are:
 %%
 %% <ul>
@@ -22,8 +22,8 @@
 %% <li>Size limited, define the maximum number of entries upon queue creation;</li>
 %% <li>Readers are synchronized to prevent race conditions;</li>
 %% <li>Readers return the number of entries that were lost due to too
-%% fast writers.</li>
-%% <li>As many queues as needed;</li>
+%% fast writers;</li>
+%% <li>As many queues as needed.</li>
 %% </ul>
 %%
 
