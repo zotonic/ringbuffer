@@ -4,9 +4,10 @@
 %% often implemented as a ring, or cylic, buffer. Where the writer can
 %% push the reader ahead if the buffer is full.
 %%
-%% This kind of buffers is very useful in situations where you can have
-%% big surges of writers, with a limited amount of readers. And where it
-%% is ok to silently drop entries from the queue.
+%% This kind of buffers is useful in situations where you can have
+%% surges of writers, with a limited amount of readers. And where it
+%% is allowed to drop entries from the queue if the readers can't keep
+%% up with the writers.
 %%
 %% An example is a logging system for a http server, which can handle large
 %% bursts of requests. The logger is often limited in its throughput, and it
@@ -17,14 +18,13 @@
 %% implemented in ets. Its main characteristics are:
 %%
 %% <ul>
-%% <li>Size limited, define the maximum number of entries upon queue creation;</li>
-%% <li>As many queues as needed;</li>
 %% <li>Optimized for writes: non locking and non blocking queue writes;</li>
+%% <li>Size limited, define the maximum number of entries upon queue creation;</li>
 %% <li>Readers are synchronized to prevent race conditions;</li>
-%% <li>Readers return the number of entries that were lost due to too.</li>
-%% fast writers.
+%% <li>Readers return the number of entries that were lost due to too
+%% fast writers.</li>
+%% <li>As many queues as needed;</li>
 %% </ul>
-%%
 %%
 
 %% Copyright 2021 Marc Worrell

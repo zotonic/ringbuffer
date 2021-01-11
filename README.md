@@ -5,8 +5,32 @@ RingBuffer
 
 A ring buffer implementation using Erlang and ets tables.
 
-Writing and reading from the ring buffer is lock-free and
-does not use message passing.
+Main feature is lock free writing without message passing, making
+this implementation ideal for log systems with many fast writers or
+big bursts.
+
+Ringbuffer implements a length limited queue. In systems this is
+often implemented as a ring, or cylic, buffer. Where the writer can
+push the reader ahead if the buffer is full.
+
+This kind of buffers is useful in situations where you can have
+surges of writers, with a limited amount of readers. And where it
+is allowed to drop entries from the queue if the readers can't keep
+up with the writers.
+
+An example is a logging system for a http server, which can handle large
+bursts of requests. The logger is often limited in its throughput, and it
+is perfectly ok to drop log entries if that means that the server can
+handle the peak load.
+
+This ringbuffer is technically not a ring. It is a size limited buffer,
+implemented in ets. Its main characteristics are:
+
+ * Optimized for writes: non locking and non blocking queue writes;
+ * Size limited, define the maximum number of entries upon queue creation;
+ * Readers are synchronized to prevent race conditions;
+ * Readers return the number of entries that were lost due to too fast writers.
+ * As many queues as needed;
 
 The size of the ring is set upon creation. If the ring is full
 then older entries are overwritten. Overwritten entries are skipped
@@ -54,21 +78,35 @@ The `Payload` can be any Erlang term.
 It can be read afterwards:
 
 ```erlang
-    {ok, {0, Payload}} = ringbuffer:read(name).
+    {ok, {NSkipped, Payload}} = ringbuffer:read(name).
 ```
 
-The `0` is the number of entries skipped during reads. If the consumer
-can keep up with the producers then it will be 0. If entries are overwritten
+The `NSkipped` is the number of entries skipped during reads. If the consumer
+can keep up with the producers then it will be `0`. If entries are overwritten
 then it will return the number of overwritten entries.
-
-Entries are skipped by repeatingly reading the next buffer position till
-an entry that is expected is found.
 
 If the buffer is empty then an error is returned:
 
 ```erlang
     {error, empty} = ringbuffer:read(name).
 ```
+
+## Use in your own supervisor
+
+You can use ringbuffer in your own supervisor with the following child spec:
+
+```erlang
+    % Size and name of the ringbuffer
+    BufferSize = 1000,
+    NameOfMyBuffer = foobar,
+    % The child spec for your supervisor
+    #{
+        start => {ringbuffer_process, start_link, [NameOfMyBuffer, BufferSize]},
+        restart => permanent,
+        type => worker
+    }
+```
+
 
 ## Test
 
