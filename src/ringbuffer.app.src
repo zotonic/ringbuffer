@@ -1,6 +1,6 @@
 {application, ringbuffer,
  [
-  {description, "RingBuffer - size limited queue, like a ring of cyclic buffer. With non blocking and non locking writers."},
+  {description, "RingBuffer - size limited queue, like a ring or cyclic buffer. With non blocking and non locking writers."},
   {vsn, "git"},
   {registered, []},
   {applications, [
