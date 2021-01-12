@@ -100,7 +100,7 @@ write(Name, Payload) ->
 %% For the case where multiple readers are racing past the writer can not be solved
 %% without synchronization, we let the ringbuffer process handle the reader increment.
 %%
--spec read( Name :: atom() ) -> {ok, {Skipped :: pos_integer(), Payload :: term() }} | {error, empty}.
+-spec read( Name :: atom() ) -> {ok, {Skipped :: non_neg_integer(), Payload :: term() }} | {error, empty}.
 read(Name) ->
     read(Name, 0).
 
