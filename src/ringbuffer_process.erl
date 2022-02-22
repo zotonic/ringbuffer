@@ -168,7 +168,7 @@ read_wait(Name, Size, Skipped, R, Try) ->
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 
-init([Name, Size]) ->
+init([Name, Size]) when is_integer(Size) andalso Size > 0 ->
     Options = [
         set,
         named_table,
