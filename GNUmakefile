@@ -41,5 +41,5 @@ test: $(REBAR)
 ## Doc targets
 ##
 edoc: $(REBAR)
-	$(REBAR) edoc
+	$(REBAR) ex_doc
 
