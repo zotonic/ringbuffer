@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2021 Marc Worrell
+%% @copyright 2021-2025 Marc Worrell
 %% @doc Supervisor for the ring buffers processes.
+%% @end
 
-%% Copyright 2021 Marc Worrell
+%% Copyright 2021-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -22,7 +23,7 @@
 
 %% API
 -export([start_link/0]).
--export([start_child/2, stop_child/1]).
+-export([start_child/2, find_child/1, stop_child/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -50,11 +51,12 @@ stop_child(Name) ->
         {error, _} -> {error, not_found}
     end.
 
+%% @doc Find the Pid of the ringbuffer with a certain name.
+-spec find_child( Name :: atom() ) -> {ok, pid()} | {error, not_found}.
 find_child(Name) ->
-    try
-        ringbuffer_process:process_pid(Name)
-    catch
-        error:badarg -> {error, not_found}
+    case ringbuffer_process:process_pid(Name) of
+        {ok, _} = Ok -> Ok;
+        {error, badarg} -> {error, not_found}
     end.
 
 %% ===================================================================

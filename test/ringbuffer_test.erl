@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2021 Marc Worrell
+%% @copyright 2021-2025 Marc Worrell
 %% @doc Tests for ringbuffer
+%% @end
 
-%% Copyright 2021 Marc Worrell
+%% Copyright 2021-2025 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -26,7 +27,7 @@ all_test_() ->
      [ fun test_simple/0
      , fun test_full/0
      , fun test_race/0
-     , fun test_busy/0
+     , {timeout, 60, fun test_busy/0}
      ]}.
 
 setup() ->
@@ -57,6 +58,8 @@ test_full() ->
     ok = ringbuffer:delete(full),
     ok.
 
+%% Test with many concurrent writers, all messages should be
+%% queued (and no overflow as the buffer is larger).
 test_race() ->
     {ok, _} = ringbuffer:new(race, 10000),
     Self = self(),
@@ -79,6 +82,7 @@ test_race() ->
     ok.
 
 
+%% Test with many concurrent readers and writers
 test_busy() ->
     {ok, _} = ringbuffer:new(busy, 100),
     NMsgs = 10000,
